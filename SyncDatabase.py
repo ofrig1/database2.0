@@ -33,9 +33,10 @@ class SyncDatabase(SerializeDatabase):
         if mode == 'threads':
             # self.semaphore = threading.Semaphore(value=MAX)  # Protects read_count
             self.semaphore = win32event.CreateSemaphore(None, MAX, MAX, None)  # Initial count = MAX, max count = MAX
-            self.read_lock = threading.Lock()
-            self.write_lock = threading.Lock()  # Ensures mutual exclusion for writing
-            self.write_try_lock = threading.Lock()  # Ensures mutual exclusion for writing
+            self.start_read_lock = win32event.CreateMutex(None, False, None)
+            self.end_read_lock = win32event.CreateMutex(None, False, None)
+            self.write_lock = win32event.CreateMutex(None, False, None) # Ensures mutual exclusion for writing
+            self.write_try_lock = win32event.CreateMutex(None, False, None)  # Ensures mutual exclusion for writing
         # elif mode == 'processes':
         #     self.semaphore = multiprocessing.Semaphore(value=MAX)
         #     self.read_lock = multiprocessing.Lock()
@@ -72,15 +73,15 @@ class SyncDatabase(SerializeDatabase):
         :return: None
         """
         logging.debug(f"Attempting to set key '{key}' with value '{value}'")
-        self.write_try_lock.acquire()
-        self.write_lock.acquire()
+        win32event.WaitForSingleObject(self.write_try_lock, win32event.INFINITE)
+        win32event.WaitForSingleObject(self.write_lock, win32event.INFINITE)
         try:
-            self.write_try_lock.release()
+            win32event.ReleaseMutex(self.write_try_lock)
             super().value_set(key, value)
             logging.info(f"Set key '{key}' with value '{value}'")
         # Reset reader tracking (release reader spots)
         finally:
-            self.write_lock.release()
+            win32event.ReleaseMutex(self.write_lock)
 
     def value_get(self, key):
         """
@@ -90,19 +91,20 @@ class SyncDatabase(SerializeDatabase):
         :param key: The key to retrieve from the database
         :return: The value associated with the key if it exists; otherwise, a warning message.
         """
-        self.write_try_lock.acquire()
-        self.write_try_lock.release()
+        win32event.WaitForSingleObject(self.write_try_lock, win32event.INFINITE)
+        win32event.ReleaseMutex(self.write_try_lock)
 
         # self.semaphore.acquire()
-        win32event.WaitForSingleObject(self.semaphore, 400000000)
-        logging.debug(f"Attempting to get key '{key}'")
+        win32event.WaitForSingleObject(self.semaphore, win32event.INFINITE)
+        logging.debug(f"Attempting to get key '{key}', reader count = {self.read_count}")
         try:
-            self.read_lock.acquire()
+            win32event.WaitForSingleObject(self.start_read_lock, win32event.INFINITE)
             self.read_count += 1
             if self.read_count == 1:
                 # First reader locks the write lock to prevent writers
-                self.write_lock.acquire()
-            self.read_lock.release()
+                logging.debug("Acquired write lock")
+                win32event.WaitForSingleObject(self.write_lock, win32event.INFINITE)
+            win32event.ReleaseMutex(self.start_read_lock)
 
             result = super().value_get(key)
             if result is not None:
@@ -110,12 +112,13 @@ class SyncDatabase(SerializeDatabase):
             else:
                 logging.warning(f"Key '{key}' not found.")
         finally:
-            self.read_lock.acquire()
+            win32event.WaitForSingleObject(self.end_read_lock, win32event.INFINITE)
             self.read_count -= 1
             if self.read_count == 0:
                 # Last reader releases the write lock
-                self.write_lock.release()
-            self.read_lock.release()
+                logging.debug("release write lock")
+                win32event.ReleaseMutex(self.write_lock)
+            win32event.ReleaseMutex(self.end_read_lock)
             win32event.ReleaseSemaphore(self.semaphore, 1)
             # self.semaphore.release()
         return result
@@ -130,11 +133,12 @@ class SyncDatabase(SerializeDatabase):
         :return: The deleted value if it existed; otherwise, None.
         """
         logging.debug(f"Attempting to delete key '{key}'")
-        self.write_lock.acquire()
+        win32event.WaitForSingleObject(self.write_lock, win32event.INFINITE)
         try:
             deleted_value = super().value_delete(key)
             logging.info(f"Deleted key '{key}' (if it existed)")
             # # Reset reader tracking (release reading spots)
         finally:
-            self.write_lock.release()
+            win32event.ReleaseMutex(self.write_lock)
+            logging.debug("writer lock released: delete")
             return deleted_value  # Return the deleted value if it existed

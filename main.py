@@ -24,13 +24,16 @@ def reader(db, key):
     :param key: The key to retrieve from the database
     """
     thread_id = threading.get_ident()  # Get the current thread ID
-    logging.info(f"Reader thread with ID {thread_id} attempting to get key '{key}'")
-    value = db.value_get(key)
-    print(f"Reader (Thread ID: {thread_id}) got {key}: {value}")
-    if value is not None:
-        logging.info(f"Reader thread with ID {thread_id} retrieved key '{key}' with value '{value}'")
-    else:
-        logging.warning(f"Reader thread with ID {thread_id} could not find key '{key}'")
+    try:
+        logging.info(f"Reader thread with ID {thread_id} attempting to get key '{key}'")
+        value = db.value_get(key)
+        print(f"Reader (Thread ID: {thread_id}) got {key}: {value}")
+        if value is not None:
+            logging.info(f"Reader thread with ID {thread_id} retrieved key '{key}' with value '{value}'")
+        else:
+            logging.warning(f"Reader thread with ID {thread_id} could not find key '{key}'")
+    except Exception as e:
+        logging.error(f"Failed: Reader thread with ID {thread_id} attempting to get key '{key}'")
 
 
 def main():
@@ -63,25 +66,25 @@ def main():
     my_database.load()
 
     # Start concurrent read operations
-    threads = []
-    logging.info("Starting multiple reader threads.")
-    for i in range(11):
-        t_read = threading.Thread(target=reader, args=(my_database, 'country'))
-        threads.append(t_read)
-
-    # Start all threads
-    for t in threads:
-        t.start()
-
-    # Wait for all threads to finish
-    for t in threads:
-        t.join()
-
-    # Final load to check data consistency
-    logging.info("Loading database state after concurrent read operations.")
-    my_database.data = {}
-    my_database.load()
-    print(my_database.data)
+    # threads = []
+    # logging.info("Starting multiple reader threads.")
+    # for i in range(11):
+    #     t_read = threading.Thread(target=reader, args=(my_database, 'country'))
+    #     threads.append(t_read)
+    #
+    # # Start all threads
+    # for t in threads:
+    #     t.start()
+    #
+    # # Wait for all threads to finish
+    # for t in threads:
+    #     t.join()
+    #
+    # # Final load to check data consistency
+    # logging.info("Loading database state after concurrent read operations.")
+    # my_database.data = {}
+    # my_database.load()
+    # print(my_database.data)
 
     # Start concurrent read and write operations
     threads = []
