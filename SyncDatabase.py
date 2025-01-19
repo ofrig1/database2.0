@@ -1,7 +1,10 @@
 from SerializeDatabase import SerializeDatabase
 import threading
-import multiprocessing
+# import multiprocessing
 import logging
+import win32event
+import win32con
+
 
 MAX = 10
 
@@ -28,14 +31,15 @@ class SyncDatabase(SerializeDatabase):
         # 0: no one is accessing the file, 1: someone is reading the file, 2: someone is waiting to write in the file
         # Locks for synchronization based on selected mode
         if mode == 'threads':
-            self.semaphore = threading.Semaphore(value=MAX)  # Protects read_count
+            # self.semaphore = threading.Semaphore(value=MAX)  # Protects read_count
+            self.semaphore = win32event.CreateSemaphore(None, MAX, MAX, None)  # Initial count = MAX, max count = MAX
             self.read_lock = threading.Lock()
             self.write_lock = threading.Lock()  # Ensures mutual exclusion for writing
             self.write_try_lock = threading.Lock()  # Ensures mutual exclusion for writing
-        elif mode == 'processes':
-            self.semaphore = multiprocessing.Semaphore(value=MAX)
-            self.read_lock = multiprocessing.Lock()
-            self.write_lock = multiprocessing.Lock()
+        # elif mode == 'processes':
+        #     self.semaphore = multiprocessing.Semaphore(value=MAX)
+        #     self.read_lock = multiprocessing.Lock()
+        #     self.write_lock = multiprocessing.Lock()
         logging.info(f"SyncDatabase initialized in {self.mode} mode with max readers {self.max_readers}")
 
     def readers_still_reading(self):
@@ -89,7 +93,8 @@ class SyncDatabase(SerializeDatabase):
         self.write_try_lock.acquire()
         self.write_try_lock.release()
 
-        self.semaphore.acquire()
+        # self.semaphore.acquire()
+        win32event.WaitForSingleObject(self.semaphore, 400000000)
         logging.debug(f"Attempting to get key '{key}'")
         try:
             self.read_lock.acquire()
@@ -111,7 +116,8 @@ class SyncDatabase(SerializeDatabase):
                 # Last reader releases the write lock
                 self.write_lock.release()
             self.read_lock.release()
-            self.semaphore.release()
+            win32event.ReleaseSemaphore(self.semaphore, 1)
+            # self.semaphore.release()
         return result
 
     def value_delete(self, key):

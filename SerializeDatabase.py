@@ -18,8 +18,8 @@ class SerializeDatabase(Database):
             win32file.GENERIC_WRITE,
             0,  # Do not share access
             None,  # Default security attributes
-            win32file.OPEN_ALWAYS,  # Open existing file or create a new one
-            0,  # Default file attributes
+            win32file.CREATE_ALWAYS,  # Open existing file or create a new one
+            win32file.FILE_ATTRIBUTE_NORMAL,  # Default file attributes
             None  # No template file
         )
 
